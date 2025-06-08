@@ -1,0 +1,579 @@
+---
+title: "Transcripomics"
+output: 
+  html_document: 
+    fig_width: 10
+    fig_height: 12
+---
+
+## Part 1 : Inference
+
+```{r}
+if (!require("BiocManager", quietly = TRUE)){
+  install.packages("BiocManager")}
+
+if (!require("factoextra", quietly = TRUE)){
+  install.packages("factoextra")}
+
+if (!require("DESeq2", quietly = TRUE)){
+  BiocManager :: install("DESeq2")}
+
+if (!require("apeglm", quietly = TRUE)){
+  BiocManager :: install("apeglm")}
+
+if (!require("EnhancedVolcano", quietly = TRUE)){
+  BiocManager :: install("EnhancedVolcano")}
+
+if (!require("vsn", quietly = TRUE)){
+  BiocManager :: install("vsn")}
+
+if (!require("hexbin", quietly = TRUE)){
+  BiocManager :: install("hexbin")}
+
+if (!require("caret", quietly = TRUE)){
+  install.packages("caret")}
+
+if (!require("glmnet", quietly = TRUE)){
+  install.packages("glmnet")}
+
+if (!require("mixOmics", quietly = TRUE)){
+  BiocManager :: install("mixOmics")}
+
+
+library(factoextra)
+library(DESeq2)
+library(MASS)
+library(EnhancedVolcano)
+library(vsn)
+library(caret)
+library(glmnet)
+library(mixOmics)
+```
+
+```{r}
+conditions = read.csv("C:/Users/grego/Documents/Master DMB - LaCatho/M2/S4/System_and_Data_Managment_in_Biosciences/Examens_Pratiques/Transcriptomics/Inf/E-ENAD-8-experiment-design.tsv",header = TRUE, sep = "\t")
+expression = read.csv("C:/Users/grego/Documents/Master DMB - LaCatho/M2/S4/System_and_Data_Managment_in_Biosciences/Examens_Pratiques/Transcriptomics/Inf/E-ENAD-8-raw-counts.tsv",header = TRUE, sep = "\t")
+
+# Dimension of the datasets
+print("Dimensions of the conditions set")
+dim(conditions)
+print("Dimensions of the expression set")
+dim(expression)
+
+print("Sample count per experimental condition and cultivar")
+table(conditions$Factor.Value.environmental.stress., conditions$Factor.Value.cultivar.)
+
+# format Table
+row.names(expression) = expression$Gene.ID
+expression$Gene.ID = NULL
+expression$Gene.Name = NULL
+expression = round(expression)
+
+# remove genes with 0 values
+expression = expression[rowSums(expression != 0)> 0,]
+
+# Log-transformed  matrix
+log_expression = log(expression + 1)
+
+# transpose expression matrix
+expression_t = t(expression)
+
+# Log-transformed transposed matrix
+log_expression_t = t(log_expression)
+
+# VST
+model_vst = vsn2(as.matrix(expression))
+vst_expression = predict(model_vst, as.matrix(expression))
+
+```
+
+```{r}
+# plot the heteroskedasticity of the data
+meanSdPlot(as.matrix(expression))
+meanSdPlot(as.matrix(log_expression))
+meanSdPlot(vst_expression)
+
+```
+
+```{r}
+# Add condition label as factor
+conditions$Factor.Value.environmental.exp_cond. = as.factor(paste(gsub(" ", "-",conditions$Factor.Value.cultivar), ifelse(conditions$Factor.Value.environmental.stress=="none","ctl","ost"), sep="_"))
+
+conditions$Factor.Value.environmental.ost_cond. = ifelse(conditions$Factor.Value.environmental.stress=="none",0,1)
+
+exp_condition_labels = conditions$Factor.Value.environmental.exp_cond.
+
+ost_condition_labels = conditions$Factor.Value.environmental.ost_cond.
+
+
+# PCA analysis for all conditions
+pca_combined = prcomp(expression_t, scale. = TRUE, na.rm = TRUE)
+
+ fviz_pca_ind(pca_combined,label= "none", habillage = exp_condition_labels, palette = c("blue","purple", "red", "orange","green", "yellow"), addEllipses = FALSE, title = "PCA of individuals per cultivar & controls vs osmotic stress - Non Normalized")
+ 
+  fviz_pca_ind(pca_combined,label= "none", habillage = ost_condition_labels, palette = c("blue", "red"), addEllipses = TRUE, title = "PCA of individuals controls vs osmotic stress - Non Normalized")
+  
+ pca_log_expression = prcomp(log_expression_t, scale. = FALSE, na.rm =TRUE)
+
+  fviz_pca_ind(pca_log_expression,label= "none", habillage = exp_condition_labels, palette = c("blue","purple", "red", "orange","green", "yellow"), addEllipses = FALSE, title = "PCA of individuals per cultivar & controls vs osmotic stress")
+ 
+  fviz_pca_ind(pca_log_expression,label= "none", habillage = ost_condition_labels, palette = c("blue", "red"), addEllipses = TRUE, title = "PCA of individuals controls vs osmotic stress")
+ 
+```
+
+```{r}
+# splitting data in subsets
+cond_subset_Cachaco = conditions[conditions$Factor.Value.environmental.exp_cond.%in%c("Cachaco_ctl", "Cachaco_ost"),]
+exp_sub_Cachaco = expression_t[cond_subset_Cachaco$Run,]
+
+cond_subset_Grande_Naine = conditions[conditions$Factor.Value.environmental.exp_cond.%in%c("Grande-Naine_ctl", "Grande-Naine_ost"),]
+exp_sub_Grande_Naine = expression_t[cond_subset_Grande_Naine$Run,]
+
+cond_subset_Mbwazirume = conditions[conditions$Factor.Value.environmental.exp_cond.%in%c("Mbwazirume_ctl", "Mbwazirume_ost"),]
+exp_sub_Mbwazirume = expression_t[cond_subset_Mbwazirume$Run,]
+
+
+# PCA on banana subsets
+pca_Cachaco = prcomp(exp_sub_Cachaco)
+pca_Grande_Naine = prcomp(exp_sub_Grande_Naine)
+pca_Mbwazirume = prcomp(exp_sub_Mbwazirume)
+
+  fviz_pca_ind(pca_Cachaco,label= "none", habillage = cond_subset_Cachaco$Factor.Value.environmental.exp_cond., palette = c("blue", "red"), addEllipses = FALSE)
+
+   fviz_pca_ind(pca_Grande_Naine,label= "none", habillage = cond_subset_Grande_Naine$Factor.Value.environmental.exp_cond., palette = c("blue", "red"), addEllipses = FALSE)
+
+    fviz_pca_ind(pca_Mbwazirume,label= "none", habillage = cond_subset_Mbwazirume$Factor.Value.environmental.exp_cond., palette = c("blue", "red"), addEllipses = FALSE)
+
+```
+
+```{r}
+gene_mean = rowMeans(expression+1)
+gene_var = apply(expression+1, 1, var)
+
+# log_gene_mean = log(gene_mean)
+# log_gene_var = log(gene_var)
+# 
+# plot(log_gene_mean, log_gene_var, log="xy",xlab="Gene-Wise mean", ylab="Gene-Wise variance")
+# abline(a=0,b=1, col="green")
+
+df_meanvar <- data.frame(mean = gene_mean, var = gene_var)
+
+ggplot(df_meanvar, aes(x = mean, y = var)) +
+  geom_point(alpha = 0.4) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_abline(intercept = 0, slope = 1, color = "green") +  # Poisson
+  geom_smooth(method = "loess", color = "red") +             # Trend
+  labs(x = "Gene-Wise Mean", y = "Gene-Wise Variance", 
+       title = "Mean-Variance Plot with Trend Line")
+
+cor(log10(gene_mean), log10(gene_var), method = "pearson")
+```
+
+```{r}
+dds = DESeqDataSetFromMatrix(countData = expression, colData = conditions, design = ~ Factor.Value.environmental.ost_cond. )
+
+dds = DESeq(dds)
+
+plotDispEsts(dds)
+
+```
+
+```{r}
+#Default usage for generating results
+results = results(dds)
+results = results[order(results$log2FoldChange),]
+
+#Volcano plot
+EnhancedVolcano(results, x="log2FoldChange", y="padj",FCcutoff = 2, pCutoff = 0.05, lab=rownames(results), labSize = 2.0, ylim = c(0,30), xlim = c(-5,7), title = "Volcano Plot With default parameters")
+
+#MA plot
+plotMA(results, ylim=c(-5,5))
+
+# results on p-value
+results[which(results$pvalue < 0.05), ]
+results[which(results$pvalue < 0.05 & results$log2FoldChange >0), ]
+results[which(results$pvalue < 0.05 & results$log2FoldChange <0), ]
+
+# results on adjusted p-value
+results[which(results$padj < 0.05), ]
+results[which(results$padj < 0.05 & results$log2FoldChange >0), ]
+results[which(results$padj < 0.05 & results$log2FoldChange <0), ]
+
+
+# Number of DEG with adj-p >0.05 & |LFC| > 2
+nrow(results[which(results$padj < 0.05 & results$log2FoldChange > 2),])
+nrow(results[which(results$padj < 0.05 & results$log2FoldChange < -2),])
+```
+
+```{r}
+filtered_res = results(dds, lfcThreshold = 2)
+
+filtered_res[which(filtered_res$pvalue < 0.05), ]
+filtered_res[which(filtered_res$pvalue < 0.05 & filtered_res$log2FoldChange >0), ]
+filtered_res[which(filtered_res$pvalue < 0.05 & filtered_res$log2FoldChange <0), ]
+
+filtered_res[which(filtered_res$padj < 0.05), ]
+filtered_res[which(filtered_res$padj < 0.05 & filtered_res$log2FoldChange >0), ]
+filtered_res[which(filtered_res$padj < 0.05 & filtered_res$log2FoldChange <0), ]
+
+
+#Volcano plot
+EnhancedVolcano(filtered_res, x="log2FoldChange", y="padj", lab=rownames(filtered_res), pCutoff = 0.05, FCcutoff = 2, labSize = 2.0, xlim = c(-2,8), ylim = c(0,30), title = "Volcano Plot lfcThreshold")
+
+#MA plot
+plotMA(filtered_res)
+```
+
+```{r}
+results_shrinkage = DESeq2::lfcShrink(dds,coef=2)
+results_shrinkage[which(results_shrinkage$pvalue < 0.05),]
+results_shrinkage[which(results_shrinkage$padj < 0.05), ]
+results_shrinkage[which(results_shrinkage$padj < 0.05 & results_shrinkage$log2FoldChange > 0), ]
+
+
+#MA plot
+plotMA(results_shrinkage, ylim =c(-5,5))
+
+#Volcano plot
+EnhancedVolcano(results_shrinkage, x="log2FoldChange", y="padj", pCutoff = 0.05, lab=rownames(results_shrinkage), FCcutoff = 2, labSize = 2.0, xlim = c(-2,8), ylim = c(0,30), title = "Volcano Plot With penalization")
+
+# Number of DEG with adj-p >0.05 & |LFC| > 2
+nrow(results_shrinkage[which(results_shrinkage$padj < 0.05 & results_shrinkage$log2FoldChange > 2),])
+nrow(results_shrinkage[which(results_shrinkage$padj < 0.05 & results_shrinkage$log2FoldChange < -2),])
+```
+
+```{r}
+# Adaptation du modèle
+dds_adj = DESeqDataSetFromMatrix(countData = expression, colData = conditions, design = ~ Factor.Value.environmental.ost_cond. + Factor.Value.cultivar.)
+
+dds_adj = DESeq(dds_adj)
+
+plotDispEsts(dds_adj)
+
+# results_adj = results(dds_adj)
+results_adj = DESeq2::lfcShrink(dds,coef=2)
+
+#Volcano plot
+EnhancedVolcano(results_adj, x="log2FoldChange", y="padj", pCutoff = 0.05, lab=rownames(results_adj), FCcutoff = 2, labSize = 2.0, xlim = c(-2,8), ylim = c(0,30), title = "Volcano Plot for adjusted model")
+# plot(results$log2FoldChange, -log10(results$pvalue))
+
+#MA plot
+plotMA(results_adj, ylim=c(-5,5))
+
+
+results_adj[which(results_adj$pvalue < 0.05), ]
+results_adj[which(results_adj$padj < 0.05), ]
+results_adj[which(results_adj$padj < 0.05 & results_adj$log2FoldChange >0), ]
+results_adj[which(results_adj$padj < 0.05 & results_adj$log2FoldChange <0), ]
+
+# Number of DEG with adj-p >0.05 & |LFC| > 2
+nrow(results_adj[which(results_adj$padj < 0.05 & results_adj$log2FoldChange > 2),])
+nrow(results_adj[which(results_adj$padj < 0.05 & results_adj$log2FoldChange < -2),])
+
+```
+
+```{r}
+
+```
+
+## Part 2: Prediction
+
+```{r}
+# Functions for Lasso Stability Selection
+
+#' A function for performing LASSO with stability selection
+#'@param  X a matrix of predictors with a column corresponding to the foldid
+#'@param y the vector of responses 
+#'@param lambda a vector, a sequence for evaluating lambda
+#'@param nboot an integer corresponding to the number of bootstraps
+#'@param random.seed an integer, for replication
+#'@param family corresponding to the type of model performed
+#'@return a LASSO object
+#'
+LASSO.SS = function(X, y, lambda=NULL, nboot=100, random.seed=1234, family="gaussian"){
+  
+  coefs.boots = list()
+  
+  X = as.data.frame(X)
+  
+  coltype=apply(X,2, class)
+
+  character.col = which(is.character(coltype))
+
+  X = as.matrix(X[, -character.col])
+  
+  n=nrow(X); p=ncol(X)
+  print(n);print(p)
+  for(i in 1:nboot){
+    # random.index = sample(1:n, 0.5*n, replace = FALSE)
+    random.index = createDataPartition(y, p = 0.5, list = FALSE)
+    
+    X.sub = X[random.index,]
+    y.sub = y[random.index]
+    
+    #Randomized LASSO
+    scaling_factors = runif(p, 0.2,0.8)
+    X.random = X.sub*scaling_factors
+    
+    if(is.null(lambda)) fit = glmnet(X.random, y.sub, alpha = 1, lambda=seq(0.1,0.001, by=-0.0005), family = family,standardize = FALSE) 
+    else fit = glmnet(X.random, y.sub, alpha = 1, lambda=lambda, family = family,standardize = FALSE) 
+    #lambda sequence is specified by hand 
+    
+    if(family == "multinomial"){
+      coef_list = coef(fit)
+      coefs = as.matrix(Reduce("+", coef_list))
+      coefs = coefs[-1,]
+    }
+    else{
+    coefs=as.matrix(coef(fit))[-1,]
+    }
+    
+    coefs[coefs!=0] = 1
+    
+    coefs.boots[[i]]=coefs
+  }
+  
+  
+  stability.scores = Reduce("+", coefs.boots)/nboot
+  #max.by.features = rowMax(stability.scores)
+  
+  
+  return(stability.scores)
+  
+  
+}
+
+
+#'  A function for plotting stability path from the LASSO.SS function
+#'  @param stability.scores a matrix as provided by LASSO.SS
+#'  @param threshold a value between 0 and 1 corresponding to the threshold of the probability that the feature is kept across bootstraps
+#'  @return a stability path plot
+plot.LASSO.SS = function(stability.scores ,threshold=0.8){
+  
+  
+  plot(1, type="n",ylim=c(0,1), xlim=c(1,ncol(stability.scores)) ,xlab="lambda index", ylab="Probability Selection")
+  
+  
+  max.by.features = apply(stability.scores,1,max)
+  
+  for(i in 1:nrow(stability.scores)) {
+    
+    if(max.by.features[i] > threshold) lines(1:ncol(stability.scores),stability.scores[i,], col="red", lty=2) 
+    else lines(1:ncol(stability.scores),stability.scores[i,])
+    
+  }
+  abline(h=threshold, lwd=2, col="red")
+}
+```
+
+```{r}
+# Importing the data
+pred_conditions = read.csv("Pred/E-MTAB-4045-experiment-design.tsv",header = TRUE, sep = "\t")
+  
+  
+pred_expression = read.csv("Pred/E-MTAB-4045-query-results.tpms.tsv",header = FALSE, sep = "\t")
+
+
+# Formating tables  
+colnames(pred_expression) = pred_expression[5,]
+rownames_pred_expression = pred_expression[-1:-5,1]
+pred_expression =pred_expression[-1:-5,c(-1,-2)]
+pred_expression = data.frame(lapply(pred_expression[,-1], as.numeric))
+rownames(pred_expression) = rownames_pred_expression
+
+
+
+dim(pred_expression)
+dim(pred_conditions)
+
+# remove genes with missing values
+pred_expression = pred_expression[complete.cases(pred_expression),]
+
+# Deprecated Used for testing purpose
+# # Remove unique condition accross development stages
+# pred_expression = pred_expression[,!colnames(pred_expression) %in% c("early.maturation.stage..axis.epidermis","early.maturation.stage..axis.parenchyma","early.maturation.stage..axis.plumule","early.maturation.stage..axis.shoot.apical.meristem","early.maturation.stage..axis.stele","early.maturation.stage..axis.vasculature","early.maturation.stage..cotyledon.abaxial.epidermis","early.maturation.stage..cotyledon.abaxial.parenchyma","early.maturation.stage..cotyledon.adaxial.epidermis","early.maturation.stage..cotyledon.adaxial.parenchyma","early.maturation.stage..cotyledon.vasculature","cotyledon.stage..embryo.proper.axis","cotyledon.stage..embryo.proper.cotyledon","early.maturation.stage..root.tip","early.maturation.stage..seed.coat.hourglass","early.maturation.stage..seed.coat.palisade","early.maturation.stage..seed.coat.parenchyma")]
+
+# View the remaining genes in the dataset
+dim(pred_expression)
+
+# Log-transformed  matrix
+log_pred_expression = log(pred_expression + 1)
+
+# transpose expression matrix
+pred_expression_t = t(pred_expression)
+
+# Log-transformed transposed matrix
+log_pred_expression_t = t(log_pred_expression)
+
+# VST
+model_vst_pred = vsn2(as.matrix(pred_expression))
+vst_pred_expression = predict(model_vst_pred, as.matrix(pred_expression))
+
+```
+
+```{r}
+# plot the heteroskedasticity of the data
+meanSdPlot(as.matrix(pred_expression))
+meanSdPlot(as.matrix(log_pred_expression))
+meanSdPlot(vst_pred_expression)
+
+```
+
+Normalization tested showed improvement over non-normalized data, both VST and Log-transformation gave good results, we will opt for log-transformation as it's more computer efficient and allow better interpretation.
+
+```{r}
+pca_factomineR_Pred_expression = FactoMineR::PCA(log_pred_expression_t, scale.unit = FALSE)
+```
+
+```{r}
+# Add developemental stage label as factor
+
+developmental_stages <- sub("\\.{2}.*", "", colnames(pred_expression))
+pred_condition_labels <- factor(developmental_stages)
+
+
+# PCA analysis for genes
+pca_pred_genes = prcomp(log_pred_expression, scale. = FALSE)
+
+ fviz_pca_ind(pca_pred_genes,label= "none", addEllipses = TRUE)
+ fviz_pca_var(pca_pred_genes,label= "none", addEllipses = TRUE)
+ 
+# PCA analysis for individuals
+pca_pred_indiv = prcomp(log_pred_expression_t, scale. = FALSE)
+
+ fviz_pca_ind(pca_pred_indiv,label= "none", habillage = pred_condition_labels, addEllipses = TRUE)
+ fviz_pca_var(pca_pred_indiv,label= "none", addEllipses = TRUE)
+
+```
+
+```{r}
+k_mean_cluster_gene = kmeans(log_pred_expression,centers = 2, algorithm = "Hartigan-Wong")
+
+fviz_cluster(k_mean_cluster_gene,log_pred_expression)
+
+
+
+k_mean_cluster_indiv = kmeans(log_pred_expression_t,centers = 20, algorithm = "Hartigan-Wong")
+
+fviz_cluster(k_mean_cluster_indiv,log_pred_expression_t)
+```
+
+Clustering with both PCA and K-means methods show that there is no clear differentiation between developmental stages but instead k-mean clustering showed a tendency to cluster per organism part.
+
+```{r}
+# defining training indexes
+train_index <- createDataPartition(pred_condition_labels, p = 0.8, list = FALSE)
+pred_expression_train = t(pred_expression[,train_index])
+pred_expression_test = t(pred_expression[,-train_index])
+pred_labels_train = pred_condition_labels[train_index]
+pred_labels_test = pred_condition_labels[-train_index]
+
+binomial_outcome = ifelse(pred_condition_labels %in% c("globular.stage","heart.stage"),1,0)
+binomial_outcome_train = binomial_outcome[train_index]
+binomial_outcome_test = binomial_outcome[-train_index]
+```
+
+```{r}
+# Plot the regularization plot for the multinomial model
+glmnet_pred_multinomial = glmnet(pred_expression_train, pred_labels_train,family="multinomial") #for binary family="binomial"
+plot(glmnet_pred_multinomial, xvar = "lambda") #regularization plot
+
+```
+
+```{r}
+# Multinomial LASSO
+cv_glmnet_pred_multinomial = cv.glmnet(pred_expression_train, pred_labels_train,family="multinomial")
+plot(cv_glmnet_pred_multinomial, xvar = "lambda") #regularization plot
+
+
+# Predictions Mutinomial 
+reponse_multi = stats::predict(cv_glmnet_pred_multinomial, pred_expression_test,type="class")
+table(pred_labels_test,reponse_multi)
+
+# Binomial LASSO
+cv_glmnet_pred_Binomial = cv.glmnet(pred_expression_train, binomial_outcome_train,family="multinomial")
+plot(cv_glmnet_pred_Binomial, xvar = "lambda") #regularization plot
+
+
+# Predictions Binomial 
+reponse_bino = stats::predict(cv_glmnet_pred_Binomial, pred_expression_test,type="class")
+table(binomial_outcome_test,reponse_bino)
+
+```
+
+```{r}
+#Stability selection Binomial
+LASSO_SS_pred_binom = LASSO.SS(pred_expression_train, binomial_outcome_train, family = "binomial")
+plot.LASSO.SS(LASSO_SS_pred_binom, threshold = 0.5) #stability path
+```
+
+```{r}
+max_LASSO_SS_binom = apply(LASSO_SS_pred_binom, 1, max)
+gene_selection = pred_expression[max_LASSO_SS_binom >= 0.5,]
+gene_selection_binom_train = pred_expression_train[,max_LASSO_SS_binom >= 0.5]
+gene_selection_binom_test = pred_expression_test[, max_LASSO_SS_binom >= 0.5]
+```
+
+```{r}
+
+#Stability selection multinomial
+LASSO_SS_pred_multi = LASSO.SS(pred_expression_train, pred_labels_train, family = "multinomial")
+plot.LASSO.SS(LASSO_SS_pred_multi, threshold = 0.5) #stability path
+
+```
+
+```{r}
+max_LASSO_SS_multi = apply(LASSO_SS_pred_multi, 1, max)
+gene_selection_multi_train = pred_expression_train[,max_LASSO_SS_multi >= 0.5]
+gene_selection_multi_test = pred_expression_test[,max_LASSO_SS_multi >= 0.5]
+```
+
+```{r}
+# determining genes selected in both models
+setdiff(colnames(gene_selection_multi_train),colnames(gene_selection_binom_train))
+```
+
+```{r}
+
+# Partial Least Square Multinomial
+PLS_DA_multi_pred = plsda(pred_expression_train,pred_labels_train, ncomp=4)
+plotIndiv(PLS_DA_multi_pred)
+plotVar(PLS_DA_multi_pred)
+
+predict_multi_plsda = stats::predict(PLS_DA_multi_pred, pred_expression_test)
+res_predict_multi_plsda <- predict_multi_plsda$class$max.dist[,4]
+table(factor(res_predict_multi_plsda, levels = levels(pred_labels_train)), pred_labels_test)
+
+
+```
+
+```{r}
+# Sparse model (with less features)
+
+keepX_multi  = rep(10,4)
+
+# Sparse Partial Least Square Multinomial
+PLS_DA_multi_pred = splsda(pred_expression_train,pred_labels_train, ncomp=4, keepX = keepX_multi)
+plotVar(PLS_DA_multi_pred)
+
+predict_multi_splsda = stats::predict(PLS_DA_multi_pred, pred_expression_test)
+res_predict_multi_splsda <- predict_multi_splsda$class$max.dist[,4]
+table(factor(res_predict_multi_splsda, levels = levels(pred_labels_train)), pred_labels_test)
+
+
+# Tuning Sparse Partial Least Square Multinomial
+tune_PLS_DA_multi_pred = tune.splsda(pred_expression_train,pred_labels_train, ncomp=10, folds = 5, nrepeat = 5, measure = "BER", test.keepX = seq(10,100,10), progressBar = TRUE)
+
+optimalNComp = tune_PLS_DA_multi_pred$choice.ncomp$ncomp
+optimalKeepX =  tune_PLS_DA_multi_pred$choice.keepX
+
+tune_PLS_DA_multi_pred = splsda(pred_expression_train,pred_labels_train, ncomp=optimalNComp, keepX =optimalKeepX)
+
+plotVar(tune_PLS_DA_multi_pred)
+
+predict_multi_splsda_tuned = stats::predict(tune_PLS_DA_multi_pred, pred_expression_test)
+res_tuned_multi_splsda <- predict_multi_splsda_tuned$class$max.dist[,optimalNComp]
+table(factor(res_tuned_multi_splsda, levels = levels(pred_labels_train)), pred_labels_test)
+
+```
