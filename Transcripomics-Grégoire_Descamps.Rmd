@@ -51,8 +51,8 @@ library(mixOmics)
 ```
 
 ```{r}
-conditions = read.csv("C:/Users/grego/Documents/Master DMB - LaCatho/M2/S4/System_and_Data_Managment_in_Biosciences/Examens_Pratiques/Transcriptomics/Inf/E-ENAD-8-experiment-design.tsv",header = TRUE, sep = "\t")
-expression = read.csv("C:/Users/grego/Documents/Master DMB - LaCatho/M2/S4/System_and_Data_Managment_in_Biosciences/Examens_Pratiques/Transcriptomics/Inf/E-ENAD-8-raw-counts.tsv",header = TRUE, sep = "\t")
+conditions = read.csv("Inf/E-ENAD-8-experiment-design.tsv",header = TRUE, sep = "\t")
+expression = read.csv("Inf/E-ENAD-8-raw-counts.tsv",header = TRUE, sep = "\t")
 
 # Dimension of the datasets
 print("Dimensions of the conditions set")
